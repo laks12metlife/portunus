@@ -1,4 +1,5 @@
 import json
+import requests
 from fnmatch import fnmatchcase
 from urllib.parse import urlparse
 
@@ -24,6 +25,7 @@ from .models import User
 from .errors import INVALID_PASSWORD, AUTH_FAILURE, AUTH_CHANGE_LOCKOUT
 from .token import ResetToken
 from .change_email_token import ChangeEmailToken
+from .constants import GOOGLE_CAPTCHA_URL
 
 REFRESH_TOKEN_SESSION_KEY = "refresh_token"
 
@@ -184,7 +186,7 @@ def generate_axes_lockout_response(request, credentials):
         "authentication.tasks:force_password_reset", get_client_username(request, credentials)
     )
     error_message = (
-        f"Too many failed login attempts, check your email to choose a new password."
+        "Too many failed login attempts, check your email to choose a new password."
     )
     return make_response(data={api_settings.NON_FIELD_ERRORS_KEY: error_message}, status=403)
 
@@ -199,4 +201,16 @@ def check_change_email_token(token_str, user):
         return token["user_id"] == str(user.portunus_uuid)
 
     except TokenError:
+        return False
+
+
+def check_captcha_key(key):
+    try:
+        response = requests.post(
+            url=GOOGLE_CAPTCHA_URL,
+            data={"secret": settings.GOOGLE_CAPTCHA_SECRET_KEY, "response": key},
+        )
+        return response.json().get("success", False)
+
+    except requests.exceptions.RequestException:
         return False

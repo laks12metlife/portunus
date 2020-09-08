@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react';
 import PropTypes from 'prop-types';
 import { useRouter } from 'next/router';
+import ReCaptcha from 'react-google-recaptcha';
 
 import PasswordStrengthBar from 'react-password-strength-bar';
 
@@ -17,17 +18,23 @@ import TermsCheckbox from 'components/TermsCheckbox';
 import { useGlobalContext, useInputFieldState } from 'hooks';
 import { MIN_PASSWORD_LENGTH } from 'utils/constants';
 
+import env from 'utils/env';
+
 const AuthBase = ({
   submitCredentials,
   submitText,
   headerText,
   showTerms,
   allowAutoComplete,
+  showCaptcha,
   children,
 }) => {
   const [email, onChangeEmail] = useInputFieldState('');
   const [password, onChangePassword] = useInputFieldState('');
   const [termsOfService, setTermsOfService] = useState(false);
+  const [captchaSiteKey, setCaptchaSiteKey] = useState('');
+  const [captchaKey, setCaptchaKey] = useState('');
+  const recaptchaRef = useRef();
   const [inputErrors, setInputErrors] = useState({});
   const [processing, setProcessing] = useState(false);
   const router = useRouter();
@@ -39,6 +46,12 @@ const AuthBase = ({
   useEffect(() => {
     if (store.authenticated) {
       router.push('/');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showCaptcha) {
+      env.captchaSiteKey.then(setCaptchaSiteKey);
     }
   }, []);
 
@@ -61,8 +74,11 @@ const AuthBase = ({
       errors.terms = 'Please agree to continue.';
     }
 
-    setInputErrors(errors);
+    if (showCaptcha && !captchaKey) {
+      errors.non_field_errors = 'Please complete the captcha to continue.';
+    }
 
+    setInputErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
@@ -78,6 +94,10 @@ const AuthBase = ({
 
   const handleError = error => {
     if (error.response && error.response.data) {
+      if (showCaptcha) {
+        recaptchaRef.current.reset();
+        setCaptchaKey('');
+      }
       setInputErrors(error.response.data);
     } else {
       setInputErrors({ non_field_errors: 'An unknown error has occurred. Please try again.' });
@@ -97,6 +117,7 @@ const AuthBase = ({
       email: email.toLowerCase(),
       password,
       next,
+      captchaKey,
     })
       .then(handleSuccess)
       .catch(handleError);
@@ -150,7 +171,17 @@ const AuthBase = ({
             error={inputErrors.password}
           />
         )}
-        <Spacer v={8} />
+        {showCaptcha &&
+          (captchaSiteKey ? (
+            <ReCaptcha
+              sitekey={captchaSiteKey}
+              onChange={value => setCaptchaKey(value)}
+              ref={recaptchaRef}
+            />
+          ) : (
+            <div>Loading...</div>
+          ))}
+        <Spacer v={24} />
         <Button
           variant="contained"
           color="primary"
@@ -178,12 +209,14 @@ AuthBase.propTypes = {
   headerText: PropTypes.string.isRequired,
   showTerms: PropTypes.bool,
   allowAutoComplete: PropTypes.bool,
+  showCaptcha: PropTypes.bool,
   children: PropTypes.node.isRequired,
 };
 
 AuthBase.defaultProps = {
   showTerms: false,
   allowAutoComplete: false,
+  showCaptcha: false,
 };
 
 export default observer(AuthBase);

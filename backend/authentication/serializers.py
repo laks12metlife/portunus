@@ -6,16 +6,24 @@ from rest_framework.exceptions import ValidationError
 
 from shared.email import PortunusMailer
 from .models import User
+from .utils import check_captcha_key
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
+    captchaKey = serializers.CharField()
+
     class Meta:
         model = User
-        fields = ("email", "password")
+        fields = ("email", "password", "captchaKey")
         extra_kwargs = {"password": {"write_only": True}}
 
     def validate_password(self, value):
         validate_password(value)
+        return value
+
+    def validate_captchaKey(self, value):
+        if not check_captcha_key(value):
+            raise serializers.ValidationError(_("The captcha key is not valid."))
         return value
 
     def create(self, validated_data):

@@ -302,12 +302,20 @@ if SENTRY_DSN is not None:
         environment=ENVIRONMENT,
     )
 
+GOOGLE_CAPTCHA_SECRET_KEY = prod_required_env(
+    "GOOGLE_CAPTCHA_SECRET_KEY", default="6Ldof8kZAAAAAB69zPnBf0og7OZyiRzlzmApOhSX"
+)
+GOOGLE_CAPTCHA_SITE_KEY = prod_required_env(
+    "GOOGLE_CAPTCHA_SITE_KEY", default="6Ldof8kZAAAAAKdQfBfgJQ8Ogbr-esIgLj9K8tYH"
+)
+
 ZYGOAT_FRONTEND_META_CONFIG = {
     "sentry_dsn": prod_required_env(
         "DJANGO_FRONTEND_SENTRY_DSN",
         default="https://8db6b816b01548e0bacdb9bdbeb2caf8@o39628.ingest.sentry.io/5339664",
     ),
     "sentry_environment": ENVIRONMENT,
+    "captcha_site_key": GOOGLE_CAPTCHA_SITE_KEY,
 }
 
 CELERY_BROKER_URL = CACHES["default"]["LOCATION"]
