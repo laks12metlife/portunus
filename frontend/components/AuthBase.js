@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react';
 import PropTypes from 'prop-types';
 import { useRouter } from 'next/router';
+import ReCaptcha from 'react-google-recaptcha';
 
 import PasswordStrengthBar from 'react-password-strength-bar';
 import { makeStyles } from '@material-ui/core/styles';
@@ -17,23 +18,28 @@ import Grid from '@wui/layout/grid';
 import TermsCheckbox from 'components/TermsCheckbox';
 import { useGlobalContext, useInputFieldState } from 'hooks';
 import { MIN_PASSWORD_LENGTH } from 'utils/constants';
+import env from 'utils/env';
 
 const useStyles = makeStyles({
   form: {
     maxWidth: 550,
   },
 });
+
 const AuthBase = ({
   submitCredentials,
   submitText,
   headerText,
   showTerms,
   allowAutoComplete,
+  showCaptcha,
   children,
 }) => {
   const [email, onChangeEmail] = useInputFieldState('');
   const [password, onChangePassword] = useInputFieldState('');
   const [termsOfService, setTermsOfService] = useState(false);
+  const [captchaSiteKey, setCaptchaSiteKey] = useState('');
+  const recaptchaRef = useRef();
   const [inputErrors, setInputErrors] = useState({});
   const [processing, setProcessing] = useState(false);
   const router = useRouter();
@@ -46,6 +52,9 @@ const AuthBase = ({
   useEffect(() => {
     if (store.authenticated) {
       router.push('/');
+    }
+    if (showCaptcha) {
+      env.captchaSiteKey.then(setCaptchaSiteKey);
     }
   }, []);
 
@@ -92,7 +101,7 @@ const AuthBase = ({
     setProcessing(false);
   };
 
-  const handleSubmit = e => {
+  const handleSubmit = async e => {
     e.preventDefault();
     if (processing || !validateForm()) {
       return;
@@ -100,10 +109,21 @@ const AuthBase = ({
 
     setProcessing(true);
 
+    let captchaKey = '';
+    if (showCaptcha) {
+      // If there is already a captchaKey from a previous unsuccessful register or login attempt, we want to clear it.
+      if (recaptchaRef.current.getValue()) {
+        recaptchaRef.current.reset();
+      }
+      // Invoke the challenge.  This will either return a captchaKey right away or show a picture challenge first.
+      captchaKey = await recaptchaRef.current.executeAsync();
+    }
+
     submitCredentials({
       email: email.toLowerCase(),
       password,
       next,
+      captchaKey,
     })
       .then(handleSuccess)
       .catch(handleError);
@@ -163,6 +183,9 @@ const AuthBase = ({
           />
         )}
         <Spacer v={8} />
+        {showCaptcha && captchaSiteKey && (
+          <ReCaptcha sitekey={captchaSiteKey} ref={recaptchaRef} size="invisible" />
+        )}
         <Button
           variant="contained"
           color="primary"
@@ -190,12 +213,14 @@ AuthBase.propTypes = {
   headerText: PropTypes.string.isRequired,
   showTerms: PropTypes.bool,
   allowAutoComplete: PropTypes.bool,
+  showCaptcha: PropTypes.bool,
   children: PropTypes.node.isRequired,
 };
 
 AuthBase.defaultProps = {
   showTerms: false,
   allowAutoComplete: false,
+  showCaptcha: false,
 };
 
 export default observer(AuthBase);

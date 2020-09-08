@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock, patch
 from urllib import parse
 from parameterized import parameterized
 
@@ -22,10 +22,21 @@ USER_EMAIL = "user@test.com"
 VALID_PASSWORD = "test_password123"
 INVALID_PASSWORD = "wrong_password123"
 TEST_TOKEN = "test_token"
+TEST_CAPTCHA_KEY = "test_captcha_key"
 
 USER_DATA = {
     "email": USER_EMAIL,
     "password": VALID_PASSWORD,
+}
+
+LOGIN_USER_DATA = {
+    **USER_DATA,
+    "captchaKey": "",
+}
+
+REGISTER_USER_DATA = {
+    **USER_DATA,
+    "captchaKey": TEST_CAPTCHA_KEY,
 }
 
 GOOGLE_USER_DATA = {
@@ -48,12 +59,12 @@ FAILED_FACEBOOK_RESPONSE = Mock(json=lambda: {"error": "bad_token"}, ok=False)
 class TestLogin:
     def test_login(self, authenticate_and_test):
         UserFactory(**USER_DATA)
-        authenticate_and_test("authentication:login", USER_DATA)
+        authenticate_and_test("authentication:login", LOGIN_USER_DATA)
 
     def test_login_wrong_password(self, authenticate_and_test):
         UserFactory(**USER_DATA)
         data = {
-            **USER_DATA,
+            **LOGIN_USER_DATA,
             "password": INVALID_PASSWORD,
         }
         authenticate_and_test("authentication:login", data, success=False)
@@ -69,53 +80,81 @@ class TestRegister:
             "uam38m2",  # Too short
         ],
     )
+    @patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
     def test_register_with_bad_password(self, authenticate_and_test, password):
         data = {
-            **USER_DATA,
+            **REGISTER_USER_DATA,
             "password": password,
         }
         authenticate_and_test("authentication:register", data, success=False)
 
+    @patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
     def test_register_with_bad_email(self, authenticate_and_test):
         data = {
-            **USER_DATA,
+            **REGISTER_USER_DATA,
             "email": "abc@abc",
         }
         authenticate_and_test("authentication:register", data, success=False)
 
-    def test_register_existing_email(self, authenticate_and_test):
-        UserFactory(**USER_DATA)
-        data = {**USER_DATA, "password": INVALID_PASSWORD}
+    def test_register_with_blank_captcha_key(self, authenticate_and_test):
+        data = {
+            **REGISTER_USER_DATA,
+            "captchaKey": "",
+        }
         authenticate_and_test("authentication:register", data, success=False)
 
+    def test_register_with_bad_captcha_key(self, authenticate_and_test):
+        data = {
+            **REGISTER_USER_DATA,
+            # Already validated captcha key which cannot be re-used.
+            "captchaKey": "03AGdBq25VLxRmMS6CO5AHCocz-CC46Npovoj_EsU8-q11F-C9MyjPP-bwzZ_WJgjVIGmmPwN6IRS4OACv6f7sKdPxCYDpHtcfnsynpjiBT0uqNQMy_xnJDEYRPt6aYLKgSnwcE1QiN2NwIue7BpDh4zSLVQYTm-T4IgdAPciDC_nakAdvkw8jh4Ph1nArZdSkrFDPi_x_wzVSpHin_hLF79nped-tlZuTiIVsxxjq1PRD1BJgUOhmTkdwYRHqeMOdlp4Vkdk-NVi1lpbTDXS9fCt94ztRQcCC85qND9AKwV0-bH9NcLtkYvJ5ZR5gJtB4Om4YZZAizPDIexQ8uv3hNA0nDo-P6uEumYcAwj7025DFN6uAvArb3kQGv98QYovYTa-xmb8PSB0mSOtDPNyOThizWoAKio9RwkyEA3Y9V58s7acTWd-OLKBT1pK7yc8ibt21miX4ARLd",
+        }
+        authenticate_and_test("authentication:register", data, success=False)
+
+    def test_register_without_captcha_key(self, authenticate_and_test):
+        data = {
+            **USER_DATA,
+        }
+        authenticate_and_test("authentication:register", data, success=False)
+
+    @patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
+    def test_register_existing_email(self, authenticate_and_test):
+        UserFactory(**USER_DATA)
+        data = {**REGISTER_USER_DATA, "password": INVALID_PASSWORD}
+        authenticate_and_test("authentication:register", data, success=False)
+
+    @patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
     def test_redirect(self, authenticate_and_test):
         redirect_url = "http://localhost:1234/test_path"
         data = {
-            **USER_DATA,
+            **REGISTER_USER_DATA,
             "next": redirect_url,
         }
         authenticate_and_test("authentication:register", data, redirect_url=redirect_url)
 
+    @patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
     @override_settings(VALID_REDIRECT_HOSTNAMES=["*.testing.com"])
     def test_redirect_wildcard(self, authenticate_and_test):
         redirect_url = "http://sub.testing.com"
         data = {
-            **USER_DATA,
+            **REGISTER_USER_DATA,
             "next": redirect_url,
         }
         authenticate_and_test("authentication:register", data, redirect_url=redirect_url)
 
+    @patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
     def test_ignores_bad_redirect_param(self, authenticate_and_test):
         data = {
-            **USER_DATA,
+            **REGISTER_USER_DATA,
             "next": "https://badsite.com",
         }
         authenticate_and_test("authentication:register", data)
 
 
+@patch("authentication.serializers.check_captcha_key", new=MagicMock(return_value=True))
 class TestLogout:
     def test_logout(self, client, authenticate_and_test):
-        authenticate_and_test("authentication:register", USER_DATA)
+        authenticate_and_test("authentication:register", REGISTER_USER_DATA)
         response = client.get(reverse("logout"))
 
         assert response.status_code == 302
@@ -130,7 +169,7 @@ class TestLogout:
         assert_unauthenticated(client)
 
     def test_logout_preserves_query_params(self, client, authenticate_and_test):
-        authenticate_and_test("authentication:register", USER_DATA)
+        authenticate_and_test("authentication:register", REGISTER_USER_DATA)
         query_params = {"test": "value"}
         response = client.get(reverse("logout"), query_params)
 
@@ -146,7 +185,7 @@ class TestLogout:
 
     @override_settings(VALID_REDIRECT_HOSTNAMES=["*.testing.com"])
     def test_logout_redirects_to_logout_redirect(self, client, authenticate_and_test):
-        authenticate_and_test("authentication:register", USER_DATA)
+        authenticate_and_test("authentication:register", REGISTER_USER_DATA)
         test_url = "https://www.testing.com"
         params = {"logoutNext": test_url}
         response = client.get(reverse("logout"), params)
@@ -157,7 +196,7 @@ class TestLogout:
 
     @override_settings(VALID_REDIRECT_HOSTNAMES=["*.testing.com"])
     def test_logout_does_not_redirect_to_bad_domain(self, client, authenticate_and_test):
-        authenticate_and_test("authentication:register", USER_DATA)
+        authenticate_and_test("authentication:register", REGISTER_USER_DATA)
         params = {"logoutNext": "https://www.badsite.com"}
         response = client.get(reverse("logout"), params)
 
@@ -167,7 +206,7 @@ class TestLogout:
         assert_unauthenticated(client)
 
     def test_logout_blacklists_user_tokens(self, client, authenticate_and_test):
-        authenticate_and_test("authentication:register", USER_DATA)
+        authenticate_and_test("authentication:register", REGISTER_USER_DATA)
         user = User.objects.get(email=USER_DATA["email"])
         user_token = str(RefreshToken.for_user(user))
         client.get(reverse("logout"))

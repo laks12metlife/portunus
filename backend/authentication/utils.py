@@ -1,4 +1,5 @@
 import json
+import requests
 from fnmatch import fnmatchcase
 from urllib.parse import urlparse
 
@@ -24,6 +25,7 @@ from .models import User
 from .errors import INVALID_PASSWORD, AUTH_FAILURE, AUTH_CHANGE_LOCKOUT
 from .token import ResetToken
 from .change_email_token import ChangeEmailToken
+from .constants import GOOGLE_CAPTCHA_URL
 
 REFRESH_TOKEN_SESSION_KEY = "refresh_token"
 
@@ -199,4 +201,16 @@ def check_change_email_token(token_str, user):
         return token["user_id"] == str(user.portunus_uuid)
 
     except TokenError:
+        return False
+
+
+def check_captcha_key(key):
+    try:
+        response = requests.post(
+            url=GOOGLE_CAPTCHA_URL,
+            data={"secret": settings.GOOGLE_CAPTCHA_SECRET_KEY, "response": key},
+        )
+        return response.json().get("success", False)
+
+    except requests.exceptions.RequestException:
         return False

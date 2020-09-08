@@ -6,17 +6,26 @@ from rest_framework.exceptions import ValidationError
 
 from shared.email import PortunusMailer
 from .models import User
+from .utils import check_captcha_key
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
+    captchaKey = serializers.CharField()
+
     class Meta:
         model = User
-        fields = ("email", "password")
+        fields = ("email", "password", "captchaKey")
         extra_kwargs = {"password": {"write_only": True}}
 
-    def validate_password(self, value):
-        validate_password(value)
-        return value
+    # CaptchaKey is marked invalid after one attempted validation.
+    # Raise other errors first because we want to check if LoginUsingRegisterSerializer is valid with the same captchaKey.
+    def validate(self, data):
+        validate_password(data["password"])
+        if User.objects.filter(email=data["email"]).first():
+            raise ValidationError("User with email already exists.")
+        if not check_captcha_key(data["captchaKey"]):
+            raise ValidationError("The captcha key is not valid.")
+        return data
 
     def create(self, validated_data):
         return User.objects.create_user(
@@ -26,11 +35,13 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.ModelSerializer):
+    captchaKey = serializers.CharField(allow_blank=True)
+
     bad_credentials_error = _("Invalid username or password")
 
     class Meta:
         model = User
-        fields = ("email", "password")
+        fields = ("email", "password", "captchaKey")
         extra_kwargs = {"password": {"write_only": True}, "email": {"validators": []}}
 
     def validate(self, data):
@@ -50,7 +61,8 @@ class LoginUsingRegisterSerializer(LoginSerializer):
     def validate(self, data):
         if User.objects.filter(email=data["email"]).first() is None:
             raise ValidationError(self.bad_credentials_error)
-
+        if not check_captcha_key(data["captchaKey"]):
+            raise ValidationError("The captcha key is not valid.")
         return super().validate(data)
 
 
